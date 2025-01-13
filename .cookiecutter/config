@@ -1,0 +1,5 @@
+# Change these at your peril:
+export PROJECT_NAME=ASF Levies Model App
+export REPO_NAME=asf_levies_model_app
+export DESCRIPTION=Web app for testing new scenarios in the ASF domestic energy bills and levies model.
+export PROJECT_OPENNESS=public
