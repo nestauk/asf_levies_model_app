@@ -105,10 +105,11 @@ with st.sidebar:
                     rebalancing_weights[levy.short_name]["new_gas_weight"]
                 )
 
+            # Rebalancing weights: To general taxation
             else:
-                rebalancing_weights[levy.short_name]["new_tax_weight"] = 0.0
-                rebalancing_weights[levy.short_name]["new_gas_weight"] = 1.0
-                rebalancing_weights[levy.short_name]["new_electricity_weight"] = 1.0
+                rebalancing_weights[levy.short_name]["new_tax_weight"] = 1.0
+                rebalancing_weights[levy.short_name]["new_gas_weight"] = 0.0
+                rebalancing_weights[levy.short_name]["new_electricity_weight"] = 0.0
 
             # Rebalancing weights: Unit costs vs standing charge
 
