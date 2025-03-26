@@ -101,6 +101,7 @@ with st.sidebar:
     )
 
     if st.session_state.approach == "Create my own":
+        st.session_state.rebalancing_weights = create_scenario_weights_dict(levies)
 
         for levy in levies:
 
@@ -354,7 +355,16 @@ cost_to_tax = sum(
     for levy in rebalanced_levies
 )
 
+# Result: Energy price cap (i.e. typical household bill)
+baseline_price_cap = baseline_electricity_tariff.calculate_total_consumption(
+    2.7, vat=True
+) + baseline_gas_tariff.calculate_total_consumption(11.5, vat=True)
+rebalanced_price_cap = rebalanced_electricity_tariff.calculate_total_consumption(
+    2.7, vat=True
+) + rebalanced_gas_tariff.calculate_total_consumption(11.5, vat=True)
+
 col1, col2, col3 = st.columns(3)
+
 with col2:
     st.warning(
         f"**Electricity-to-gas ratio: {rebalanced_ratio:.2f}** *(Current: {baseline_ratio:.2f})*"
@@ -396,6 +406,11 @@ st.markdown(
     f"<p style='color:black; font-size: 20px;'><b>Distributional impacts: Effect on energy bills</b></p>",
     unsafe_allow_html=True,
 )
+col1, col2 = st.columns(2)
+with col2:
+    st.info(
+        f"**Typical household bill: £{rebalanced_price_cap:,.2f}** *(Current: £{baseline_price_cap:,.2f})*"
+    )
 
 chart = make_archetype_bill_change_chart(rebalanced_summary_table, chart_width=1000)
 st.altair_chart(chart)
