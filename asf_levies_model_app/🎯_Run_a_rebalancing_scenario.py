@@ -29,8 +29,17 @@ st.markdown(
     "**from the [A Sustainable Future](https://www.nesta.org.uk/sustainable-future/) team at Nesta**"
 )
 
+
 # Instantiate baseline levies as LevyCollection (rebalanced to denominators)
-levies = instantiate_levies()
+@st.cache_data
+def load_levies():
+    fileobject = data.download_annex_4(as_fileobject=True)
+    levies = instantiate_levies(fileobject)
+    fileobject.close()
+    return levies
+
+
+levies = load_levies()
 
 # Create dictionary of denominators for each levy
 supply_elec = 96_517_461.0
@@ -45,6 +54,23 @@ denominators = set_common_denominators(
     customers_elec=customers_elec,
     customers_gas=customers_gas,
 )
+
+# Initialise session state variables
+
+if "approach" not in st.session_state:
+    st.session_state.approach = "Current"
+
+if "rebalancing_weights" not in st.session_state:
+    st.session_state.rebalancing_weights = {}
+
+if "levy_modes" not in st.session_state:
+    st.session_state.levy_modes = {}
+
+if (
+    st.session_state.approach == "Create my own"
+    and not st.session_state.rebalancing_weights
+):
+    st.session_state.rebalancing_weights = create_scenario_weights_dict(levies)
 
 # Show selectors for levy reform scenario in side bar
 with st.sidebar:
@@ -63,36 +89,60 @@ with st.sidebar:
             "Remove RO and FIT levies from electricity to taxation",
             "Create my own",
         ],
-        index=0,
+        index=[
+            "Current",
+            "Rebalance all levies on electricity to gas",
+            "Remove all levies on electricity to taxation",
+            "Rebalance RO and FIT levies from electricity to gas",
+            "Remove RO and FIT levies from electricity to taxation",
+            "Create my own",
+        ].index(st.session_state.approach),
+        key="approach",
     )
 
-    if approach == "Create my own":
-        rebalancing_weights = create_scenario_weights_dict(levies)
+    if st.session_state.approach == "Create my own":
 
         for levy in levies:
 
-            # Rebalance or move to tax
             st.markdown("---")
-            mode = st.radio(
+
+            # Radio button for levy mode (rebalance or move to tax)
+            if levy.short_name not in st.session_state.levy_modes:
+                st.session_state.levy_modes[levy.short_name] = (
+                    "Rebalance between electricity and gas"
+                )
+
+            st.session_state.levy_modes[levy.short_name] = st.radio(
                 f"**{levy.name}**",
                 [
                     "Rebalance between electricity and gas",
                     "Remove off bills to general taxation",
                 ],
-                index=0,
+                index=[
+                    "Rebalance between electricity and gas",
+                    "Remove off bills to general taxation",
+                ].index(st.session_state.levy_modes[levy.short_name]),
                 key=f"{levy.short_name}_radio",
             )
 
             # Rebalancing weights: Fuel
             if (
-                st.session_state[f"{levy.short_name}_radio"]
+                st.session_state.levy_modes[levy.short_name]
                 == "Rebalance between electricity and gas"
             ):
-                rebalancing_weights[levy.short_name]["new_tax_weight"] = 0.0
-                rebalancing_weights[levy.short_name]["new_gas_weight"] = (
+                st.session_state.rebalancing_weights[levy.short_name][
+                    "new_tax_weight"
+                ] = 0.0
+                st.session_state.rebalancing_weights[levy.short_name][
+                    "new_gas_weight"
+                ] = (
                     st.slider(
                         "Electricity (0) <-> Gas (100)",
-                        value=(rebalancing_weights[levy.short_name]["new_gas_weight"])
+                        value=(
+                            st.session_state.rebalancing_weights[levy.short_name][
+                                "new_gas_weight"
+                            ]
+                        )
                         * 100.0,
                         min_value=0.0,
                         max_value=100.0,
@@ -101,35 +151,55 @@ with st.sidebar:
                     )
                     / 100.0
                 )
-                rebalancing_weights[levy.short_name]["new_electricity_weight"] = 1.0 - (
-                    rebalancing_weights[levy.short_name]["new_gas_weight"]
+                st.session_state.rebalancing_weights[levy.short_name][
+                    "new_electricity_weight"
+                ] = 1.0 - (
+                    st.session_state.rebalancing_weights[levy.short_name][
+                        "new_gas_weight"
+                    ]
                 )
 
             # Rebalancing weights: To general taxation
             else:
-                rebalancing_weights[levy.short_name]["new_tax_weight"] = 1.0
-                rebalancing_weights[levy.short_name]["new_gas_weight"] = 0.0
-                rebalancing_weights[levy.short_name]["new_electricity_weight"] = 0.0
+                st.session_state.rebalancing_weights[levy.short_name][
+                    "new_tax_weight"
+                ] = 1.0
+                st.session_state.rebalancing_weights[levy.short_name][
+                    "new_gas_weight"
+                ] = 0.0
+                st.session_state.rebalancing_weights[levy.short_name][
+                    "new_electricity_weight"
+                ] = 0.0
 
             # Rebalancing weights: Unit costs vs standing charge
 
             # Check for electricity levy rebalancing
-            if rebalancing_weights[levy.short_name]["new_electricity_weight"] != 0.0:
+            if (
+                st.session_state.rebalancing_weights[levy.short_name][
+                    "new_electricity_weight"
+                ]
+                != 0.0
+            ):
                 # Set initial mode based on weights
                 if (
-                    rebalancing_weights[levy.short_name]["new_variable_weight_elec"]
+                    st.session_state.rebalancing_weights[levy.short_name][
+                        "new_variable_weight_elec"
+                    ]
                     == 1.0
                 ):
                     elec_index = 0  # Variable weight mode
                 elif (
-                    rebalancing_weights[levy.short_name]["new_fixed_weight_elec"] != 0.0
+                    st.session_state.rebalancing_weights[levy.short_name][
+                        "new_fixed_weight_elec"
+                    ]
+                    != 0.0
                 ):
                     elec_index = 1  # Fixed weight mode
                 else:
                     # Default to either variable or fixed based on gas weight setting
                     elec_index = (
                         0
-                        if rebalancing_weights[levy.short_name][
+                        if st.session_state.rebalancing_weights[levy.short_name][
                             "new_variable_weight_gas"
                         ]
                         else 1
@@ -140,38 +210,50 @@ with st.sidebar:
                     "Mode of levy on electricity:",
                     ["Unit cost", "Standing charge"],
                     index=elec_index,
-                    key=f"{levy.short_name} elec mode",
+                    key=f"{levy.short_name}_elec_mode",
                 )
 
                 # Update weights based on the selected mode
                 if elec_mode == "Unit cost":
-                    rebalancing_weights[levy.short_name][
+                    st.session_state.rebalancing_weights[levy.short_name][
                         "new_variable_weight_elec"
                     ] = 1.0
-                    rebalancing_weights[levy.short_name]["new_fixed_weight_elec"] = 0.0
+                    st.session_state.rebalancing_weights[levy.short_name][
+                        "new_fixed_weight_elec"
+                    ] = 0.0
                 else:
-                    rebalancing_weights[levy.short_name][
+                    st.session_state.rebalancing_weights[levy.short_name][
                         "new_variable_weight_elec"
                     ] = 0.0
-                    rebalancing_weights[levy.short_name]["new_fixed_weight_elec"] = 1.0
+                    st.session_state.rebalancing_weights[levy.short_name][
+                        "new_fixed_weight_elec"
+                    ] = 1.0
 
             # Check for gas levy rebalancing
-            if rebalancing_weights[levy.short_name]["new_gas_weight"] != 0.0:
+            if (
+                st.session_state.rebalancing_weights[levy.short_name]["new_gas_weight"]
+                != 0.0
+            ):
                 # Set initial mode based on weights
                 if (
-                    rebalancing_weights[levy.short_name]["new_variable_weight_gas"]
+                    st.session_state.rebalancing_weights[levy.short_name][
+                        "new_variable_weight_gas"
+                    ]
                     == 1.0
                 ):
                     gas_index = 0  # Variable weight mode
                 elif (
-                    rebalancing_weights[levy.short_name]["new_fixed_weight_gas"] != 0.0
+                    st.session_state.rebalancing_weights[levy.short_name][
+                        "new_fixed_weight_gas"
+                    ]
+                    != 0.0
                 ):
                     gas_index = 1  # Fixed weight mode
                 else:
                     # Default to either variable or fixed based on gas weight setting
                     gas_index = (
                         0
-                        if rebalancing_weights[levy.short_name][
+                        if st.session_state.rebalancing_weights[levy.short_name][
                             "new_variable_weight_elec"
                         ]
                         else 1
@@ -182,40 +264,58 @@ with st.sidebar:
                     "Mode of levy on gas:",
                     ["Unit cost", "Standing charge"],
                     index=gas_index,
-                    key=f"{levy.short_name} gas mode",
+                    key=f"{levy.short_name}_gas_mode",
                 )
 
                 # Update weights based on the selected mode
                 if gas_mode == "Unit cost":
-                    rebalancing_weights[levy.short_name][
+                    st.session_state.rebalancing_weights[levy.short_name][
                         "new_variable_weight_gas"
                     ] = 1.0
-                    rebalancing_weights[levy.short_name]["new_fixed_weight_gas"] = 0.0
+                    st.session_state.rebalancing_weights[levy.short_name][
+                        "new_fixed_weight_gas"
+                    ] = 0.0
                 else:
-                    rebalancing_weights[levy.short_name][
+                    st.session_state.rebalancing_weights[levy.short_name][
                         "new_variable_weight_gas"
                     ] = 0.0
-                    rebalancing_weights[levy.short_name]["new_fixed_weight_gas"] = 1.0
+                    st.session_state.rebalancing_weights[levy.short_name][
+                        "new_fixed_weight_gas"
+                    ] = 1.0
 
     else:
-        rebalancing_weights = get_approach_weights(levies, approach)
+        st.session_state.rebalancing_weights = get_approach_weights(
+            levies, st.session_state.approach
+        )
 
 
 # Rebalance levies based on chosen approach
 rebalanced_levies = levies.rebalance_levies(
-    rebalancing_weights,
+    st.session_state.rebalancing_weights,
     scenario_name="Rebalanced",
 )
 
-# Instantiate baseline tariffs
-baseline_tariffs = instantiate_tariffs(payment_method="Other Payment")
+
+# Instantiate baseline and rebalanced tariffs
+@st.cache_data
+def load_tariffs():
+    fileobject = data.download_annex_9(as_fileobject=True)
+    baseline_tariffs = instantiate_tariffs(
+        fileobject_annex_9=fileobject, payment_method="Other Payment"
+    )
+    rebalanced_tariffs = instantiate_tariffs(
+        fileobject_annex_9=fileobject, payment_method="Other Payment"
+    )
+    fileobject.close()
+    return baseline_tariffs, rebalanced_tariffs
+
+
+baseline_tariffs, rebalanced_tariffs = load_tariffs()
+
 baseline_electricity_tariff = update_electricity_tariff_policy_cost(
     baseline_tariffs["electricity"], levies
 )
 baseline_gas_tariff = update_gas_tariff_policy_cost(baseline_tariffs["gas"], levies)
-
-# Instantiate rebalanced tariffs
-rebalanced_tariffs = instantiate_tariffs(payment_method="Other Payment")
 rebalanced_electricity_tariff = update_electricity_tariff_policy_cost(
     rebalanced_tariffs["electricity"], rebalanced_levies
 )
@@ -223,12 +323,20 @@ rebalanced_gas_tariff = update_gas_tariff_policy_cost(
     rebalanced_tariffs["gas"], rebalanced_levies
 )
 
+
 # Create a list of Consumers (average Ofgem archetypes only, n=24) for baseline and rebalanced scenario
+@st.cache_data
+def load_archetypes():
+    return data.ofgem_archetypes_data()
+
+
+ofgem_archetypes_df = load_archetypes()
+
 baseline_consumers = instantiate_archetype_consumers(
-    baseline_gas_tariff, baseline_electricity_tariff
+    ofgem_archetypes_df, baseline_gas_tariff, baseline_electricity_tariff
 )
 rebalanced_consumers = instantiate_archetype_consumers(
-    rebalanced_gas_tariff, rebalanced_electricity_tariff
+    ofgem_archetypes_df, rebalanced_gas_tariff, rebalanced_electricity_tariff
 )
 
 # Result: Unit cost ratio
@@ -241,7 +349,8 @@ rebalanced_ratio = calculate_unit_cost_ratio(
 
 # Result: Cost to taxpayers
 cost_to_tax = sum(
-    rebalancing_weights[levy.short_name]["new_tax_weight"] * levy.revenue
+    st.session_state.rebalancing_weights[levy.short_name]["new_tax_weight"]
+    * levy.revenue
     for levy in rebalanced_levies
 )
 

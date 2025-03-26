@@ -19,6 +19,7 @@ from asf_levies_model.summary import create_scenario_weights_dict
 
 
 def instantiate_levies(
+    fileobject_annex_4,
     supply_elec: float = 96_517_461.0,  # MWh
     supply_gas: float = 266_505_188.0,  # MWh
     customers_elec: int = 29_239_936,
@@ -48,36 +49,31 @@ def instantiate_levies(
     ncc_scaling_factor = supply_elec / ncc_eligible_supply
 
     # Instantiate status quo levies with Annex 4 data
-    @st.cache_data
-    def load_annex_4():
-        return data.download_annex_4(as_fileobject=True)
-
-    fileobject = load_annex_4()
     list_levies = [
         levies.RO.from_dataframe(
-            data.process_data_RO(fileobject), denominator=supply_elec
+            data.process_data_RO(fileobject_annex_4), denominator=supply_elec
         ),
         levies.AAHEDC.from_dataframe(
-            data.process_data_AAHEDC(fileobject), denominator=supply_elec
+            data.process_data_AAHEDC(fileobject_annex_4), denominator=supply_elec
         ),
         levies.GGL.from_dataframe(
-            data.process_data_GGL(fileobject), denominator=customers_gas
+            data.process_data_GGL(fileobject_annex_4), denominator=customers_gas
         ),
         levies.WHD.from_dataframe(
-            data.process_data_WHD(fileobject),
+            data.process_data_WHD(fileobject_annex_4),
             customers_gas=customers_gas,
             customers_elec=customers_elec,
         ),
-        levies.ECO.from_dataframe(data.process_data_ECO(fileobject)),
+        levies.ECO.from_dataframe(data.process_data_ECO(fileobject_annex_4)),
         levies.FIT.from_dataframe(
-            data.process_data_FIT(fileobject),
+            data.process_data_FIT(fileobject_annex_4),
             scaling_factor=fit_scaling_factor,
         ),
         levies.NCC.from_dataframe(
-            data.process_data_NCC(fileobject), scaling_factor=ncc_scaling_factor
+            data.process_data_NCC(fileobject_annex_4), scaling_factor=ncc_scaling_factor
         ),
     ]
-    fileobject.close()
+
     pc = levies.LevyCollection("Policy Costs", "pc", list_levies, denominator_values)
 
     # Rebalance baseline levies to reflect denominators
@@ -160,14 +156,9 @@ def get_approach_weights(levies: List, approach_name: str) -> Dict:
     return approach_weights[approach_name]
 
 
-def instantiate_tariffs(payment_method: str = "Other Payment") -> Dict:
-
-    # Load Annex 9
-    @st.cache_data
-    def load_annex_9():
-        return data.download_annex_9(as_fileobject=True)
-
-    fileobject_annex_9 = load_annex_9()
+def instantiate_tariffs(
+    fileobject_annex_9, payment_method: str = "Other Payment"
+) -> Dict:
 
     # Load tariff tables from Annex 9
     # Other payment
@@ -201,7 +192,6 @@ def instantiate_tariffs(payment_method: str = "Other Payment") -> Dict:
     gas_standard_credit_typical = data.process_tariff_gas_standard_credit_typical(
         fileobject_annex_9
     )
-    fileobject_annex_9.close()
 
     # Instantiate Tariff objects
     if payment_method == "Other Payment":
@@ -241,14 +231,11 @@ def update_gas_tariff_policy_cost(tariff, levies):
     return tariff
 
 
-def instantiate_archetype_consumers(gas_tariff, electricity_tariff):
-
-    # Load Ofgem energy consumer archetypes data
-    @st.cache_data
-    def load_archetypes():
-        return data.ofgem_archetypes_data()
-
-    ofgem_archetypes_df = load_archetypes()
+def instantiate_archetype_consumers(
+    ofgem_archetypes_df: pd.DataFrame,
+    gas_tariff: tariffs.Tariff,
+    electricity_tariff: tariffs.Tariff,
+):
 
     # Create list of Consumers (Average Ofgem archetypes only, n=24)
     consumers = [
@@ -272,15 +259,10 @@ def instantiate_archetype_consumers(gas_tariff, electricity_tariff):
 
 
 def instantiate_archetype_consumers_with_eligibility(
-    gas_tariff, electricity_tariff, eligibility_size_name
+    ofgem_archetypes_df: pd.DataFrame,
+    gas_tariff: tariffs.Tariff,
+    electricity_tariff: tariffs.Tariff,
 ):
-
-    # Load Ofgem energy consumer archetypes data
-    @st.cache_data
-    def load_archetypes():
-        return data.ofgem_archetypes_data()
-
-    ofgem_archetypes_df = load_archetypes()
 
     # Create list of eligible Consumers (Average Ofgem archetypes only, n=24)
     eligible_consumers = [
@@ -297,7 +279,6 @@ def instantiate_archetype_consumers_with_eligibility(
             / 1_000,
             gas_tariff=gas_tariff,
             electricity_tariff=electricity_tariff,
-            # size=ofgem_archetypes_df.loc[row, eligibility_size_name],
             scheme_eligible=True,
         )
         for row in range(1, 25)
@@ -318,8 +299,6 @@ def instantiate_archetype_consumers_with_eligibility(
             / 1_000,
             gas_tariff=gas_tariff,
             electricity_tariff=electricity_tariff,
-            # size=ofgem_archetypes_df.loc[row, "ArchetypeSize"]
-            # - ofgem_archetypes_df.loc[row, eligibility_size_name],
             scheme_eligible=True,
         )
         for row in range(1, 25)
