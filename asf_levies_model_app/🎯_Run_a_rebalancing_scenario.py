@@ -373,6 +373,11 @@ with col3:
     st.error(
         f"**Additional cost to taxpayers: £{cost_to_tax/1_000_000_000:.2f} billion per year**"
     )
+    start = baseline_electricity_tariff.price_cap_period.left
+    end = baseline_electricity_tariff.price_cap_period.right
+    st.markdown(
+        f"*Using price cap period: {start.day} {start.strftime('%B')} to {end.day} {end.strftime('%B')} {end.year}*"
+    )
 
 
 # Result: Distribution impacts dot chart
